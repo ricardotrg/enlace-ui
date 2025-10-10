@@ -18,21 +18,18 @@
     const API = "http://localhost:8080";
     const qs = new URLSearchParams(location.search);
     const token = qs.get("token");
-    const hours = Number(qs.get("hours") || "24");
     if (!token) { alert("Falta token"); throw new Error("No token"); }
 
-    // Colores consistentes con la vista principal
-    const ONLINE_COLOR = "#1fa21f";   // verde brillante
-    const OFFLINE_COLOR = "#7a7a7a";  // gris tenue
+    // Flecha verde permanente
+    const FIXED_GREEN = "#1fa21f";   // verde brillante único
 
-    // Flecha SVG más grande (36px)
-    function arrowIcon(headingDeg = 0, online = true) {
+    function arrowIcon(headingDeg = 0) {
       return L.divIcon({
         className: "truck-arrow",
         html: `
           <svg width="36" height="36" viewBox="0 0 48 48" style="transform: rotate(${headingDeg}deg); transition: transform 0.3s ease;">
             <polygon points="24,4 38,36 24,30 10,36"
-              fill="${online ? ONLINE_COLOR : OFFLINE_COLOR}"
+              fill="${FIXED_GREEN}"
               stroke="rgba(0,0,0,.5)"
               stroke-width="1.5"
               stroke-linejoin="round"
@@ -47,13 +44,11 @@
     map.zoomControl.setPosition("bottomleft");
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
 
-    const poly = L.polyline([], { weight: 4, opacity: 0.85 }).addTo(map);
-    const marker = L.marker([19.243,-103.726], { icon: arrowIcon(0, false), zIndexOffset: 2000 }).addTo(map);
+    const marker = L.marker([19.243,-103.726], { icon: arrowIcon(0), zIndexOffset: 2000 }).addTo(map);
 
     function apply(d){
-      const online = !d.stale; // <-- usa campo 'stale' para definir color
       marker.setLatLng([d.lat,d.lon]);
-      marker.setIcon(arrowIcon(d.headingDeg ?? 0, online));
+      marker.setIcon(arrowIcon(d.headingDeg ?? 0));
       map.setView([d.lat,d.lon]);
     }
 
@@ -62,24 +57,12 @@
       .then(r=>r.ok?r.json():null)
       .then(d=>{ if(d){ apply(d); } });
 
-    // Recorrido histórico
-    fetch(`${API}/api/mirror/${token}/trail?hours=${encodeURIComponent(hours)}`)
-      .then(r=>r.ok?r.json():null)
-      .then(b=>{
-        if (b && Array.isArray(b.trail)) {
-          poly.setLatLngs(b.trail.map(p=>[p.lat,p.lon]));
-        }
-      });
-
     // Flujo en vivo (SSE)
     const ev = new EventSource(`${API}/api/mirror/${token}/stream`);
     ev.addEventListener("position", e => {
-    const d = JSON.parse(e.data);
-    console.log("[MIRROR FIX]", d);  // 👈 esto imprimirá lo que realmente llega
-    apply(d);
-    const pts = poly.getLatLngs(); 
-    pts.push([d.lat,d.lon]); 
-    poly.setLatLngs(pts);
+      const d = JSON.parse(e.data);
+      console.log("[MIRROR FIX]", d);
+      apply(d);
     });
   </script>
 </body>

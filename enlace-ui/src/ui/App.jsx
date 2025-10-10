@@ -41,12 +41,16 @@ const arrowIcon = (headingDeg = 0, online = true) =>
   L.divIcon({
     className: "truck-arrow",
     html: `
-      <svg width="34" height="34" viewBox="0 0 48 48" style="transform: rotate(${headingDeg}deg)">
-        <circle cx="24" cy="24" r="22" fill="white" stroke="rgba(0,0,0,.15)"/>
-        <polygon points="24,6 32,26 24,22 16,26" fill="${online ? ONLINE_COLOR : OFFLINE_COLOR}"/>
+      <svg width="36" height="36" viewBox="0 0 48 48" style="transform: rotate(${headingDeg}deg); transition: transform 0.3s ease;">
+        <polygon points="24,4 38,36 24,30 10,36"
+          fill="${online ? ONLINE_COLOR : OFFLINE_COLOR}"
+          stroke="rgba(0,0,0,.5)"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+          style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4))" />
       </svg>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
   });
 
 
@@ -152,20 +156,20 @@ const arrowIcon = (headingDeg = 0, online = true) =>
   };
 
   const loadTrail = async (idQ, h) => {
-    if (!idQ || !polyRef.current) return;
-    setTrailBusy(true);
-    try {
-      const tr = await fetch(
-        `${API_BASE}/api/admin/trail?deviceId=${encodeURIComponent(idQ)}&hours=${encodeURIComponent(h)}`
-      );
-      if (tr.ok) {
-        const body = await tr.json();
-        polyRef.current.setLatLngs((body.trail || []).map(p => [p.lat, p.lon]));
-      }
-    } finally {
-      setTrailBusy(false);
+  if (!idQ || !polyRef.current) return;
+  setTrailBusy(true);
+  try {
+    const tr = await fetch(
+      `${API_BASE}/api/admin/trail?deviceId=${encodeURIComponent(idQ)}&hours=${encodeURIComponent(h)}`
+    );
+    if (tr.ok) {
+      const body = await tr.json();                 // <-- antes decía r.json()
+      polyRef.current.setLatLngs((body.trail || []).map(p => [p.lat, p.lon]));
     }
-  };
+  } finally {
+    setTrailBusy(false);
+  }
+};
 
   const conectar = async () => {
     if (sseRef.current) {
@@ -176,6 +180,8 @@ const arrowIcon = (headingDeg = 0, online = true) =>
 
     setEstado("Conectando…");
     setBadgeClass("stale");
+
+    if (!showTrail) clearTrail(); // <-- limpia trazo si el toggle está OFF
 
     const idParam = (deviceId || "").trim();
     const initUrl = idParam
@@ -188,20 +194,7 @@ const arrowIcon = (headingDeg = 0, online = true) =>
         const d = await r.json();
         onFix(d);
         const idQ = (idParam || d?.deviceId || "").toString();
-        if (showTrail) await loadTrail(idQ, hours); else clearTrail();
-        if (idQ && polyRef.current) {
-          try {
-            const tr = await fetch(
-              `${API_BASE}/api/admin/trail?deviceId=${encodeURIComponent(idQ)}&hours=${encodeURIComponent(hours)}`
-            );
-            if (tr.ok) {
-              const body = await tr.json(); // { trail: [...] }
-              polyRef.current.setLatLngs((body.trail || []).map((p) => [p.lat, p.lon]));
-            }
-          } catch (err) {
-            console.error("Error cargando trazo histórico:", err);
-          }
-        }
+        if (showTrail) await loadTrail(idQ, hours); else clearTrail(); // <-- respeta toggle
       }
     } catch (err) {
       console.error("Error inicial obteniendo fix:", err);
