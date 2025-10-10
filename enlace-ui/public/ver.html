@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Rastreo en vivo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>html,body,#map{height:100%;margin:0}</style>
+</head>
+<body>
+<div id="map"></div>
+<script type="module">
+  import L from "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet-src.esm.js";
+  const API="http://localhost:8080";
+  const token = location.pathname.split("/").pop(); // /ver/<token>
+  const map = L.map("map").setView([19.243,-103.726], 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
+  const m = L.marker([19.243,-103.726]).addTo(map);
+
+  function apply(d){ m.setLatLng([d.lat, d.lon]); map.setView([d.lat,d.lon]); }
+
+  // pide fix inicial
+  fetch(`${API}/api/mirror/${token}/latest`).then(r=>r.ok?r.json():null).then(d=>d&&apply(d));
+
+  // SSE
+  const ev = new EventSource(`${API}/api/mirror/${token}/stream`);
+  ev.addEventListener("position", e => { const d=JSON.parse(e.data); apply(d); });
+</script>
+</body>
+</html>
