@@ -8,10 +8,49 @@
   <style>
     html,body,#map{height:100%;margin:0}
     .truck-arrow{will-change: transform}
+    /* Pill mini */
+    .status-pill{
+      position:fixed; top:12px; right:12px;
+      display:inline-flex; align-items:center; gap:8px;
+      padding:8px 12px; border-radius:9999px;
+      backdrop-filter: blur(8px);
+      background: rgba(20,20,20,0.55);
+      color:#fff; font:600 13px/1.1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      box-shadow:0 4px 14px rgba(0,0,0,.18);
+      z-index:9999;
+    }
+    .dot{width:10px;height:10px;border-radius:50%}
+    .pill-online { background: rgba(15,140,15,.65) }
+    .pill-connecting { background: rgba(245,166,35,.65) }
+    .pill-reconnecting { background: rgba(0,123,255,.65) }
+    .pill-down { background: rgba(212,63,58,.70) }
+    .pill-expired { background: rgba(85,85,85,.70) }
+
+    @keyframes pulseDot{
+      0%{opacity:.5; transform:scale(.9)}
+      50%{opacity:1; transform:scale(1)}
+      100%{opacity:.5; transform:scale(.9)}
+    }
+    .dot.blink{ animation: pulseDot 1.4s ease-in-out infinite }
+
+    @keyframes pulseFast {
+      0%   { opacity: 0.3; transform: scale(0.85); }
+      50%  { opacity: 1;   transform: scale(1); }
+      100% { opacity: 0.3; transform: scale(0.85); }
+    }
+    .dot.blink-fast {
+      animation: pulseFast 0.7s ease-in-out infinite;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <!-- Pill mini -->
+  <div id="status" class="status-pill pill-connecting">
+    <span class="dot" id="dot" style="background:#FFD54F"></span>
+    <span id="label">CONECTANDO…</span>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -46,24 +85,159 @@
 
     const marker = L.marker([19.243,-103.726], { icon: arrowIcon(0), zIndexOffset: 2000 }).addTo(map);
 
+    // ---- Pill mini (estado) ----
+    const pill = document.getElementById("status");
+    const label = document.getElementById("label");
+    const dot = document.getElementById("dot");
+    let lastReceived = null; // Date.now() ms
+    let linkExpired = false;
+    let pillIntervalId = null;
+    let expireCheckId = null;
+    let connected = false;  
+
+    function setState(state, agoText){
+      pill.className = "status-pill " + (
+        state==="online" ? "pill-online" :
+        state==="connecting" ? "pill-connecting" :
+        state==="reconnecting" ? "pill-reconnecting" :
+        state==="expired" ? "pill-expired" : "pill-down"
+      );
+      dot.style.background =
+        state==="online" ? "#7CFC00" :
+        state==="connecting" ? "#FFD54F" :
+        state==="reconnecting" ? "#A5D8FF" :
+        state==="expired" ? "#BDBDBD" : "#FF6B6B";
+
+      if (state === "online") {
+        dot.classList.add("blink");
+        dot.classList.remove("blink-fast");
+      } else if (state === "reconnecting") {
+        dot.classList.add("blink-fast");
+        dot.classList.remove("blink");
+      } else {
+        dot.classList.remove("blink");
+        dot.classList.remove("blink-fast");
+      }
+
+      label.textContent =
+        state==="online" ? `EN LÍNEA — ${agoText||"hace 0 s"}` :
+        state==="connecting" ? "CONECTANDO…" :
+        state==="reconnecting" ? "RECONECTANDO…" :
+        state==="expired" ? "ENLACE EXPIRADO" : "DESCONECTADO";
+    }
+    function humanAgo(ms){
+      if (!ms) return "hace 0 s";
+      const secs = Math.max(0, Math.floor((Date.now() - ms)/1000));
+      if (secs < 60) return `hace ${secs} s`;
+      const mins = Math.floor(secs/60);
+      if (mins < 60) return `hace ${mins} min`;
+      const hrs = Math.floor(mins/60);
+      return `hace ${hrs} h ${mins%60} min`;
+    }
+    // refresca “hace X” y estado básico cada 5s
+    pillIntervalId = setInterval(() => {
+      if (linkExpired) return;
+      const age = lastReceived ? (Date.now() - lastReceived) : Infinity;
+
+      if (connected) {
+        // Solo "EN LÍNEA" si seguimos conectados y el fix es reciente
+        if (age <= 120000) setState("online", humanAgo(lastReceived));
+        else setState("down", humanAgo(lastReceived));
+      } else {
+        // Sin conexión: nunca subir a "EN LÍNEA" sin evento nuevo
+        if (age <= 120000) setState("reconnecting", humanAgo(lastReceived));
+        else setState("down", humanAgo(lastReceived));
+      }
+    }, 5000);
+
+    setInterval(checkExpired, 10000); // cada 10s
+
+
     function apply(d){
+      if (linkExpired) return;   
       marker.setLatLng([d.lat,d.lon]);
       marker.setIcon(arrowIcon(d.headingDeg ?? 0));
       map.setView([d.lat,d.lon]);
+      // actualizar pill a “en línea”
+      lastReceived = Date.now();
+      setState("online", humanAgo(lastReceived));
     }
 
+    async function checkExpired() {
+      try {
+        const r = await fetch(`${API}/api/mirror/${token}/latest`, { cache: "no-store" });
+        if (r.status === 410) {
+          try { ev.close(); } catch {}
+          setState("expired");
+          return true;
+        }
+      } catch {}
+      return false;
+    }
+
+    async function checkExpired() {
+      try {
+        const r = await fetch(`${API}/api/mirror/${token}/latest`, { cache: "no-store" });
+        if (r.status === 410) {
+          linkExpired = true;               // ⬅️ congela todo
+          try { ev.close(); } catch {}
+          if (pillIntervalId) clearInterval(pillIntervalId);
+          if (expireCheckId) clearInterval(expireCheckId);
+          setState("expired");
+          return true;
+        }
+      } catch {}
+      return false;
+    }
+    expireCheckId = setInterval(checkExpired, 10000);
+
     // Última posición
-    fetch(`${API}/api/mirror/${token}/latest`)
-      .then(r=>r.ok?r.json():null)
-      .then(d=>{ if(d){ apply(d); } });
+    fetch(`${API}/api/mirror/${token}/latest`, { cache: "no-store" })
+      .then(r => {
+        if (r.status === 410) {
+          linkExpired = true;
+          if (pillIntervalId) clearInterval(pillIntervalId);
+          if (expireCheckId) clearInterval(expireCheckId);
+          setState("expired");
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
+      .then(d => { if (!linkExpired && d) apply(d); });
 
     // Flujo en vivo (SSE)
     const ev = new EventSource(`${API}/api/mirror/${token}/stream`);
     ev.addEventListener("position", e => {
+      if (linkExpired) return;
       const d = JSON.parse(e.data);
-      console.log("[MIRROR FIX]", d);
+      connected = true;                    // ⬅️ nuevo
       apply(d);
     });
+    // estados extra del pill, sin tocar lógica existente
+    ev.addEventListener("open", () => setState("connecting"));
+    ev.addEventListener("status", e => {
+      try {
+        const s = JSON.parse(e.data)?.state || "reconnecting";
+        if (s === "reconnecting") setState("reconnecting", humanAgo(lastReceived));
+      } catch {}
+    });
+
+    ev.addEventListener("expired", () => {
+    linkExpired = true;
+    try { ev.close(); } catch {}
+    if (pillIntervalId) clearInterval(pillIntervalId);
+    if (expireCheckId) clearInterval(expireCheckId);
+    setState("expired");
+  });
+
+  ev.onerror = async () => {
+    if (linkExpired) return;
+    connected = false;                   // ⬅️ nuevo
+    if (await checkExpired()) return;
+    const age = lastReceived ? (Date.now() - lastReceived) : Infinity;
+    if (age <= 120000) setState("reconnecting", humanAgo(lastReceived));
+    else setState("down", humanAgo(lastReceived));
+  };
   </script>
 </body>
 </html>
