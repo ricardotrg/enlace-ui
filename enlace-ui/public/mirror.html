@@ -122,7 +122,7 @@
       label.textContent =
         state==="online" ? `EN LÍNEA — ${agoText||"hace 0 s"}` :
         state==="connecting" ? "CONECTANDO…" :
-        state==="reconnecting" ? "RECONECTANDO…" :
+        state==="reconnecting" ? "RECONECTANDO!" :
         state==="expired" ? "ENLACE EXPIRADO" : "DESCONECTADO";
     }
     function humanAgo(ms){
