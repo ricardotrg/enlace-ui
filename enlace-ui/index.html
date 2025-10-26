@@ -8,17 +8,27 @@
     <style>
       html,body,#root{height:100%;margin:0}
       #map{height:100%}
-      .panel{position:absolute;top:10px;right:10px;left:auto;background:#fff;padding:10px 12px;
-        border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-family:sans-serif;z-index:1000;
-        display:flex;flex-direction:column;gap:8px;max-width:820px}
-      .panel-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-      .inline{display:inline-flex;align-items:center;gap:6px}
-      .badge{padding:2px 6px;border-radius:6px;font-size:12px}
-      .ok{background:#e6ffed}
-      .stale{background:#fff3cd}
-      .down{background:#ffe6e6}
-      .btn{margin-left:6px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fafafa;cursor:pointer}
-      input{width:180px}
+      :root{--main-panel-height:220px}
+      .panel{position:absolute;top:12px;left:12px;right:auto;background:rgba(255,255,255,0.75);backdrop-filter:blur(8px);padding:16px;
+        border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.1);font-family:sans-serif;z-index:1000;
+        display:flex;flex-direction:column;gap:12px;max-width:340px;min-width:320px}
+      .panel-title{font-size:16px;font-weight:600;margin:0;color:#2c3e50}
+      .panel-section{background:rgba(248,250,252,0.8);padding:12px;border-radius:8px;border:1px solid rgba(226,232,240,0.5)}
+      .section-header{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin:0 0 8px 0}
+      .control-group{display:flex;flex-direction:column;gap:8px}
+      .control-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .inline{display:inline-flex;align-items:center;gap:8px}
+      .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+      .status-item{display:flex;align-items:center;gap:6px}
+      .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+      .status-active{background:#10b981}
+      .status-inactive{background:#94a3b8}
+      .modern-checkbox{width:16px;height:16px;margin-right:8px}
+      .modern-input{padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;width:60px}
+      .modern-btn{padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;background:#ffffff;cursor:pointer;font-size:13px;transition:all 0.2s}
+      .modern-btn:hover{background:#f8fafc;border-color:#94a3b8}
+      .modern-btn:disabled{opacity:0.5;cursor:not-allowed}
+      .device-info{font-size:12px;color:#64748b;margin-top:4px}
     </style>
   </head>
   <body>

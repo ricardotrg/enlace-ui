@@ -239,14 +239,47 @@ export default function App() {
   const loadTrail = async (idQ, h) => {
     if (!idQ || !polyRef.current) return;
     setTrailBusy(true);
+    
+    const url = `${API_BASE}/api/admin/trail?deviceId=${encodeURIComponent(idQ)}&hours=${encodeURIComponent(h)}`;
+    console.log('🚗 Loading trail with data:', {
+      deviceId: idQ,
+      hours: h,
+      url: url,
+      timestamp: new Date().toISOString()
+    });
+    
     try {
-      const tr = await fetch(
-        `${API_BASE}/api/admin/trail?deviceId=${encodeURIComponent(idQ)}&hours=${encodeURIComponent(h)}`
-      );
+      const tr = await fetch(url);
+      console.log('📡 Trail request response:', {
+        status: tr.status,
+        statusText: tr.statusText,
+        ok: tr.ok,
+        url: tr.url
+      });
+      
       if (tr.ok) {
         const body = await tr.json();
+        console.log('📍 Trail data received:', {
+          pointCount: body.trail?.length || 0,
+          trailData: body,
+          deviceId: idQ
+        });
         polyRef.current.setLatLngs((body.trail || []).map(p => [p.lat, p.lon]));
+      } else {
+        console.error('❌ Trail request failed:', {
+          status: tr.status,
+          statusText: tr.statusText,
+          deviceId: idQ,
+          hours: h
+        });
       }
+    } catch (error) {
+      console.error('🔥 Trail request error:', {
+        error: error.message,
+        deviceId: idQ,
+        hours: h,
+        timestamp: new Date().toISOString()
+      });
     } finally {
       setTrailBusy(false);
     }
@@ -315,8 +348,13 @@ export default function App() {
   const toggleSeguir = (e) => {
     const v = e.target.checked;
     setSeguir(v);
-    if (v && fix && mapRef.current) {
-      mapRef.current.setView([fix.lat, fix.lon], Math.max(mapRef.current.getZoom(), 15));
+    if (v && markersMultiRef.current.size > 0 && mapRef.current) {
+      // Follow the first selected device
+      const firstMarker = markersMultiRef.current.values().next().value;
+      if (firstMarker) {
+        const latLng = firstMarker.getLatLng();
+        mapRef.current.setView([latLng.lat, latLng.lng], Math.max(mapRef.current.getZoom(), 15));
+      }
     }
   };
 
@@ -367,6 +405,11 @@ export default function App() {
     } else {
       mk.setLatLng([lat, lon]);
       mk.setIcon(arrowIcon(headingDeg, true));
+    }
+    
+    // If following is enabled and this is the first selected device, center map on it
+    if (seguir && selected.size >= 1 && Array.from(selected)[0] === traccarDeviceId) {
+      map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: 0.5, animate: true });
     }
   };
 
@@ -429,119 +472,187 @@ export default function App() {
 
   return (
     <>
-      <div id="panel-control-principal" className="panel" style={{ fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" }}>
-        <div><b>Vista en vivo</b></div>
+      {/* Vista en Vivo - Solo visible cuando hay dispositivos seleccionados */}
+      {selected.size > 0 && (
+        <div 
+          id="panel-control-principal" 
+          className="panel" 
+          style={{ 
+            fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+            position: "fixed",
+            bottom: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            top: "auto",
+            zIndex: 1000
+          }}
+        >
+          <h2 className="panel-title">Vista en Vivo</h2>
 
-        {/* Row 1: estado + conexión */}
-        <div className="panel-row">
-          <span className={`badge ${badgeClass}`}>Estado: {estado}</span>
+        {/* Control de Seguimiento Section */}
+        <div className="panel-section">
+          <h3 className="section-header">Control de Seguimiento</h3>
+          <div className="control-group">
+            <label className="inline" style={{ userSelect: "none" }}>
+              <input
+                type="checkbox"
+                className="modern-checkbox"
+                checked={seguir}
+                onChange={toggleSeguir}
+              />
+              Seguir vehículo
+            </label>
 
-          <div className="inline">
-            <label>DeviceId Traccar:</label>
-            <input
-              placeholder="ej. 4"
-              value={deviceId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              style={{ width: 180 }}
-            />
+            <label className="inline" style={{ userSelect: "none" }}>
+              <input
+                type="checkbox"
+                className="modern-checkbox"
+                checked={showTrail}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  console.log('🛣️ Mostrar recorrido toggled:', {
+                    enabled: next,
+                    selectedDevices: Array.from(selected),
+                    selectedDeviceCount: selected.size,
+                    hours: hours,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  setShowTrail(next);
+                  if (next && selected.size > 0) {
+                    const firstSelectedId = Array.from(selected)[0];
+                    console.log('🔄 Loading trail for device:', firstSelectedId);
+                    await loadTrail(firstSelectedId.toString(), hours);
+                  } else {
+                    console.log('🧹 Clearing trail (disabled or no devices selected)');
+                    clearTrail();
+                  }
+                }}
+              />
+              Mostrar recorrido
+            </label>
+
+            <div className="control-row">
+              <label style={{ fontSize: "13px", color: "#64748b" }}>Horas:</label>
+              <input
+                type="number"
+                className="modern-input"
+                min="1"
+                max="168"
+                value={hours}
+                onChange={(e) => setHours(Number(e.target.value) || 24)}
+                disabled={!showTrail || trailBusy}
+              />
+              <button
+                className="modern-btn"
+                onClick={async () => {
+                  console.log('🔄 Actualizar trail button clicked:', {
+                    selectedDevices: Array.from(selected),
+                    selectedDeviceCount: selected.size,
+                    customHours: hours,
+                    showTrail: showTrail,
+                    trailBusy: trailBusy,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  if (selected.size > 0) {
+                    const firstSelectedId = Array.from(selected)[0];
+                    console.log('🎯 Updating trail for device:', {
+                      deviceId: firstSelectedId,
+                      hours: hours,
+                      action: 'manual_update'
+                    });
+                    await loadTrail(firstSelectedId.toString(), hours);
+                  } else {
+                    console.warn('⚠️ Cannot update trail: no devices selected');
+                  }
+                }}
+                disabled={!showTrail || trailBusy || selected.size === 0}
+              >
+                Actualizar
+              </button>
+            </div>
           </div>
+        </div>
 
-          <button className="btn" onClick={conectar}>Conectar</button>
-          <button className="btn" onClick={() => crearEspejo(deviceId || 4)}>
+        {/* Estado del Sistema Section */}
+        <div className="panel-section">
+          <h3 className="section-header">Estado del Sistema</h3>
+          {selected.size > 0 ? (
+            <div className="status-grid">
+              <div className="status-item">
+                <div className="status-dot status-active"></div>
+                <span>Dispositivos: {selected.size}</span>
+              </div>
+              <div className="status-item">
+                <div className={`status-dot ${seguir ? 'status-active' : 'status-inactive'}`}></div>
+                <span>Seguimiento</span>
+              </div>
+              <div className="status-item">
+                <div className={`status-dot ${showTrail ? 'status-active' : 'status-inactive'}`}></div>
+                <span>Recorrido</span>
+              </div>
+              {selected.size === 1 && (
+                <div className="status-item">
+                  <div className="status-dot status-active"></div>
+                  <span>ID: {Array.from(selected)[0]}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="device-info">
+              Selecciona dispositivos desde el panel izquierdo para activar controles
+            </div>
+          )}
+        </div>
+
+        {/* Compartir Section */}
+        <div className="panel-section">
+          <h3 className="section-header">Compartir</h3>
+          <button
+            className="modern-btn"
+            onClick={() => {
+              const deviceIdToShare = selected.size === 1 
+                ? Array.from(selected)[0] 
+                : (selected.size > 0 ? Array.from(selected)[0] : 4);
+              crearEspejo(deviceIdToShare);
+            }}
+            disabled={selected.size === 0}
+            style={{ width: "100%" }}
+          >
             Crear cuenta espejo
           </button>
-        </div>
-
-        {/* Row 2: seguimiento + recorrido */}
-        <div className="panel-row">
-          <label className="inline" style={{ userSelect: "none" }}>
-            <input
-              type="checkbox"
-              checked={seguir}
-              onChange={toggleSeguir}
-            />
-            Seguir vehículo
-          </label>
-
-          <label className="inline" style={{ userSelect: "none" }}>
-            <input
-              type="checkbox"
-              checked={showTrail}
-              onChange={async (e) => {
-                const next = e.target.checked;
-                setShowTrail(next);
-                const idQ = (deviceId || fix?.deviceId || fix?.traccarDeviceId || "").toString();
-                if (next) await loadTrail(idQ, hours); else clearTrail();
-              }}
-            />
-            Mostrar recorrido
-          </label>
-
-          <div className="inline">
-            <label>Horas:</label>
-            <input
-              type="number"
-              min="1"
-              max="168"
-              value={hours}
-              onChange={(e) => setHours(Number(e.target.value) || 24)}
-              style={{ width: 70 }}
-              disabled={!showTrail || trailBusy}
-            />
-            <button
-              className="btn"
-              onClick={async () => {
-                const idQ = (deviceId || fix?.deviceId || fix?.traccarDeviceId || "").toString();
-                await loadTrail(idQ, hours);
-              }}
-              disabled={!showTrail || trailBusy}
-            >
-              Actualizar
-            </button>
-          </div>
-        </div>
-
-        {/* Info panel */}
-        <div style={{ fontSize: 13 }}>
-          {fix ? (
-            <>
-              <div>
-                Última actualización: {fmtLocal(fix.receivedAt)}{" "}
-                <span style={{ opacity: 0.7 }}>({agoText})</span>
-              </div>
-              <div>Velocidad: {fix.speedKph ?? 0} km/h</div>
-              <div>Rumbo: {fix.headingDeg ?? 0}°</div>
-              <div>Lat: {fix.lat.toFixed(6)} Lon: {fix.lon.toFixed(6)}</div>
-              <div>Seguimiento: {seguir ? "Activado" : "Manual"}</div>
-            </>
-          ) : (
-            <div>Sin datos aún</div>
+          {selected.size === 0 && (
+            <div className="device-info" style={{ marginTop: 6 }}>
+              Selecciona un dispositivo para compartir
+            </div>
           )}
         </div>
       </div>
+      )}
 
       <div id="map"></div>
 
-  {/* === PANEL FLOTANTE: Mis dispositivos a la izquierda === */}
-    <div
-      id="panel-dispositivos"
-      style={{
-        position: "fixed",
-        top: "72px",
-        left: "12px",
-        width: "540px",
-        maxHeight: "75vh",
-        overflowY: "auto",
-        background: "rgba(255,255,255,0.75)",
-        backdropFilter: "blur(8px)",
-        borderRadius: "10px",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-        padding: "10px",
-        fontSize: "14px",
-        zIndex: 1000,
-        fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      }}
-    >
+      {/* === PANEL FLOTANTE: Mis dispositivos === */}
+      <div
+        id="panel-dispositivos"
+        style={{
+          position: "fixed",
+          top: "12px",
+          left: "12px",
+          width: "340px",
+          maxHeight: "calc(100vh - 24px)",
+          overflowY: "auto",
+          background: "rgba(255,255,255,0.75)",
+          backdropFilter: "blur(8px)",
+          borderRadius: "12px",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+          padding: "16px",
+          fontSize: "14px",
+          zIndex: 1000,
+          fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+        }}
+      >
       <b>Mis dispositivos</b>
       <div style={{ marginTop: 6, border: "1px solid #ddd", borderRadius: 6, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", whiteSpace: "nowrap" }}>
