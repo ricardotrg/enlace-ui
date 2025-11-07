@@ -1,0 +1,23 @@
+{
+  # TLS automático desactivado porque usas localhost
+  auto_https off
+
+  # Opcional: logs legibles
+  # debug
+}
+
+:80 {
+  # ---------- API (mantén el prefijo /api) ----------
+  handle /api/* {
+    reverse_proxy http://host.docker.internal:8080
+  }
+
+  # ---------- Todo lo demás → Vite dev server ----------
+  reverse_proxy http://host.docker.internal:5175
+
+  # ---------- Cabeceras básicas ----------
+  header {
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+  }
+}
